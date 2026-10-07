@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Echo Tune</title>
+<meta name="description" content="Echo Tune is a precise guitar tuner: it finds the string you play and shows how many cents off it is. Works offline. Nothing is recorded or uploaded.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Echo Tune">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+/* =====================================================================
+   Colours. Every colour has a light and a dark version; the app
+   follows the iPhone's appearance setting by itself.
+   Teal = Echo's colour (and the string being tuned).
+   Amber = off pitch. Green = in tune.
+   ===================================================================== */
+:root{
+  --bg:#F2F2F7; --panel:#FFFFFF; --text:#1C1C1E; --text2:#5E5E66; --text3:#8E8E93;
+  --sep:rgba(60,60,67,.14); --fill:rgba(118,118,128,.12); --fill-strong:rgba(118,118,128,.24);
+  --accent:#0E7490; --accent-bg:#0E7490; --tint:rgba(14,116,144,.12);
+  --good:#1E8E3E; --good-tint:rgba(30,142,62,.16); --off:#B45309; --off-tint:rgba(180,83,9,.12);
+  --danger:#D92D20;
+  --sheet-bg:#F2F2F7; --sheet-card:#FFFFFF;
+  --toast-bg:rgba(28,28,30,.94); --toast-fg:#FFFFFF;
+  --stripe:rgba(14,116,144,.42); --good-stripe:rgba(30,142,62,.6);
+  --wood:#E4E4EA; --wood-edge:#CDCDD4; --metal:#A9A9B2; --string:#8E8E96; --nut:#FBFBF8;
+  --peg:#FFFFFF; --peg-edge:rgba(60,60,67,.16); --seg-on:#FFFFFF;
+  --shadow:0 18px 48px rgba(20,40,60,.24),0 0 0 1px rgba(60,60,67,.10);
+  --serif:ui-serif,"New York","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --round:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#000000; --panel:#1C1C1E; --text:#F2F2F7; --text2:#AEAEB2; --text3:#7C7C82;
+    --sep:rgba(84,84,88,.55); --fill:rgba(118,118,128,.24); --fill-strong:rgba(118,118,128,.38);
+    --accent:#5CCFE6; --accent-bg:#0E7490; --tint:rgba(92,207,230,.16);
+    --good:#32D74B; --good-tint:rgba(50,215,75,.17); --off:#FFB340; --off-tint:rgba(255,179,64,.14);
+    --danger:#FF6B61;
+    --sheet-bg:#1C1C1E; --sheet-card:#2C2C2E;
+    --toast-bg:rgba(242,242,247,.96); --toast-fg:#1C1C1E;
+    --stripe:rgba(92,207,230,.5); --good-stripe:rgba(50,215,75,.62);
+    --wood:#1C1C1E; --wood-edge:#2E2E31; --metal:#5A5A60; --string:#8A8A90; --nut:#3A3A3D;
+    --peg:#2C2C2E; --peg-edge:rgba(255,255,255,.08); --seg-on:#636366;
+    --shadow:0 22px 56px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08);
+  }
+}
+
+/* ---------- basics ---------- */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bg);height:100%}
+body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;overscroll-behavior:none;
+  font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.35;cursor:default}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{display:block;flex:none}
+[hidden]{display:none!important}
+.vh{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.num{font-family:var(--round);font-variant-numeric:tabular-nums}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes rise{from{transform:translateY(100%)}to{transform:none}}
+@keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes bloom{0%{opacity:0;transform:scale(.55)}25%{opacity:1}100%{opacity:0;transform:scale(1.45)}}
+
+/* ---------- the page: header, tuning bar, the meter, the headstock ---------- */
+.app{height:100%;height:100dvh;max-width:520px;margin:0 auto;display:flex;flex-direction:column;overflow-x:hidden;overflow-y:auto;
+  padding:env(safe-area-inset-top) max(16px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px,env(safe-area-inset-left))}
+.top{flex:none;height:54px;display:flex;align-items:center;gap:8px}
+.brand{margin:0;font-size:22px;line-height:1;font-weight:800;letter-spacing:-.025em;white-space:nowrap}
+.brand b{font-weight:800;color:var(--accent)}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.status{height:34px;min-width:34px;padding:0 11px;border-radius:17px;background:var(--fill);display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  color:var(--text2);font-size:13px;font-weight:600;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex:none}
+.status[data-state="ready"]{color:var(--good)}
+.status[data-state="ready"] .dot{background:var(--good)}
+.status[data-state="saving"] .dot{background:var(--off);animation:pulse 1.2s ease-in-out infinite}
+.hbtn{width:34px;height:34px;border-radius:17px;background:var(--fill);display:grid;place-items:center;color:var(--text)}
+.hbtn:active,.status:active{background:var(--fill-strong)}
+@media (max-width:374px){#statusText{display:none}.status{padding:0}}
+
+.bar{flex:none;display:flex;gap:8px;margin-top:2px}
+.tuning-btn{flex:1;min-width:0;height:52px;display:flex;align-items:center;gap:8px;padding:0 10px 0 14px;border-radius:14px;background:var(--panel);text-align:left}
+.tuning-btn:active{background:var(--fill-strong)}
+.t-text{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.t-name{font-size:15.5px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-notes{font-family:var(--serif);font-size:14px;font-weight:600;line-height:1.2;letter-spacing:.16em;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-notes sup{font-size:.7em;letter-spacing:0}
+.app.chromatic .t-notes{font-family:inherit;font-weight:500;letter-spacing:0}
+.tuning-btn .ico{color:var(--text3);margin-left:-2px}
+.auto{flex:none;height:52px;display:flex;align-items:center;gap:9px;padding:0 8px 0 13px;border-radius:14px;background:var(--panel);font-size:15px;font-weight:650}
+.switch{position:relative;width:51px;height:31px;border-radius:16px;background:var(--fill-strong);transition:background .2s}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;
+  box-shadow:0 3px 8px rgba(0,0,0,.15),0 0 0 .5px rgba(0,0,0,.04);transition:transform .22s cubic-bezier(.3,.7,.3,1)}
+.switch[aria-checked="true"]{background:var(--accent-bg)}
+.switch[aria-checked="true"]::after{transform:translateX(20px)}
+.app.chromatic .auto{display:none}
+
+/* the stage: note name, cents, meter, strobe band, what to do */
+.stage{--state:var(--text);position:relative;flex:1 1 auto;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 0 4px}
+.stage[data-status="flat"],.stage[data-status="sharp"]{--state:var(--off)}
+.stage[data-status="in-tune"]{--state:var(--good)}
+.stage[data-status="listening"],.stage[data-status="fading"]{--state:var(--text3)}
+.note-wrap{position:relative;display:grid;place-items:center;height:clamp(80px,16vh,140px)}
+.bloom{position:absolute;left:50%;top:50%;width:190px;height:190px;margin:-95px 0 0 -95px;border-radius:50%;pointer-events:none;opacity:0;
+  background:radial-gradient(circle,var(--good-tint) 0,var(--good-tint) 38%,transparent 70%)}
+.bloom.go{animation:bloom .95s ease-out}
+.note{position:relative;display:flex;align-items:flex-start;font-family:var(--serif);font-weight:600;line-height:.9;
+  font-size:clamp(72px,14.6vh,130px);color:var(--state);transition:color .2s}
+.n-side{display:flex;flex-direction:column;justify-content:space-between;align-self:stretch;margin-left:.03em;min-width:.3em}
+.n-acc{font-size:.44em;line-height:1;margin-top:.04em}
+.n-oct{font-family:var(--round);font-weight:600;font-size:.25em;line-height:1;color:var(--text3);margin-bottom:.02em}
+.readout{display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:8px;font-family:var(--round);font-variant-numeric:tabular-nums;color:var(--state);transition:color .2s}
+.cents{font-size:30px;font-weight:650;letter-spacing:-.01em;min-width:3.4ch;text-align:right}
+.cents-unit{font-size:15px;font-weight:600;color:var(--text2)}
+.hz{margin-top:1px;font-family:var(--round);font-size:15px;font-weight:500;color:var(--text2);font-variant-numeric:tabular-nums;min-height:21px}
+.target{min-height:17px;font-size:12.5px;color:var(--text3);font-variant-numeric:tabular-nums}
+.meter{width:100%;max-width:440px;margin-top:10px}
+.meter svg{width:100%;height:auto;overflow:visible}
+.tick{stroke:var(--text3);stroke-width:1.3;stroke-linecap:round}
+.tick.major{stroke:var(--text2);stroke-width:1.8}
+.tlabel{fill:var(--text3);font-family:var(--round);font-size:10.5px;font-weight:600;text-anchor:middle;font-variant-numeric:tabular-nums}
+.side{fill:var(--text2);font-family:var(--serif);font-size:17px;font-weight:600;text-anchor:middle}
+.zone{fill:var(--good-tint)}
+.needle{color:var(--state);transition:color .2s}
+.needle line{stroke:currentColor;stroke-width:3;stroke-linecap:round}
+.needle circle{fill:currentColor}
+.stage[data-status="listening"] .needle,.stage[data-status="fading"] .needle{opacity:.45}
+.strobe{position:relative;width:100%;max-width:440px;height:22px;margin-top:6px;border-radius:11px;background:var(--fill);overflow:hidden}
+.strobe i{position:absolute;top:0;bottom:0;left:-32px;right:-32px;opacity:.2;transition:opacity .3s;
+  background-image:repeating-linear-gradient(90deg,var(--stripe) 0 6px,transparent 6px 16px)}
+.stage[data-status="flat"] .strobe i,.stage[data-status="sharp"] .strobe i{opacity:1}
+.stage[data-status="in-tune"] .strobe i{opacity:1;--stripe:var(--good-stripe)}
+.say{margin:12px 0 0;min-height:24px;font-size:17px;font-weight:650;text-align:center;color:var(--text2)}
+.stage[data-status="flat"] .say,.stage[data-status="sharp"] .say{color:var(--off)}
+.stage[data-status="in-tune"] .say{color:var(--good)}
+.stage[data-status="off"]>:not(.panel),.stage[data-status="error"]>:not(.panel),.stage[data-status="paused"]>:not(.panel){visibility:hidden}
+
+/* the panel shown before listening starts, or when it can't */
+.panel{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:0 8px;text-align:center}
+.mic-btn{width:92px;height:92px;border-radius:50%;display:grid;place-items:center;background:var(--accent-bg);color:#fff;
+  box-shadow:0 14px 30px -14px rgba(14,116,144,.9);transition:transform .12s}
+.mic-btn:active{transform:scale(.95)}
+.mic-btn.busy{animation:pulse 1.2s ease-in-out infinite}
+.panel h2{margin:6px 0 0;font-size:22px;font-weight:750;letter-spacing:-.01em}
+.panel p{margin:0;max-width:330px;font-size:14.5px;color:var(--text2)}
+.panel p b{color:var(--text);font-weight:650}
+.panel .link{height:34px;padding:0 10px;border-radius:17px;color:var(--accent);font-weight:600}
+
+/* the headstock with its six pegs */
+.neck{flex:none;display:flex;justify-content:center;padding:2px 0 10px}
+.head{position:relative;width:min(100%,430px,calc(36vh * 360 / 262));aspect-ratio:360/262}
+.head svg{position:absolute;inset:0;width:100%;height:100%}
+.hs-body{fill:var(--wood);stroke:var(--wood-edge);stroke-width:1.5}
+.hs-gear{fill:var(--wood-edge)}
+.hs-shaft{stroke:var(--metal);stroke-width:5;stroke-linecap:round}
+.hs-post{fill:var(--metal)}
+.hs-string{stroke:var(--string);stroke-width:1.3;transition:stroke .2s,stroke-width .2s}
+.hs-string.on{stroke:var(--accent);stroke-width:2.4}
+.hs-nut{fill:var(--nut);stroke:var(--wood-edge);stroke-width:1}
+.peg{position:absolute;left:calc(var(--x) * 1%);top:calc(var(--y) * 1%);width:14.6%;aspect-ratio:1;transform:translate(-50%,-50%);
+  border-radius:50%;background:var(--peg);box-shadow:0 0 0 1px var(--peg-edge),0 6px 14px -8px rgba(0,0,0,.4);
+  display:grid;place-items:center;font-family:var(--serif);font-weight:600;font-size:clamp(17px,5.3vw,23px);line-height:1;
+  transition:background .2s,color .2s,box-shadow .2s}
+.peg sup{font-size:.62em;margin-left:.02em}
+.peg.on{box-shadow:0 0 0 2.5px var(--accent),0 6px 14px -8px rgba(0,0,0,.4)}
+.peg.locked{background:var(--accent-bg);color:#fff;box-shadow:0 0 0 2.5px var(--accent-bg),0 6px 14px -8px rgba(0,0,0,.4)}
+.peg:active{transform:translate(-50%,-50%) scale(.94)}
+.peg .tick-badge{position:absolute;top:-3px;right:-3px;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+  background:var(--good);color:#fff;box-shadow:0 0 0 2px var(--bg);transform:scale(0);transition:transform .28s cubic-bezier(.3,1.6,.5,1)}
+.peg.tuned .tick-badge{transform:scale(1)}
+.app.chromatic .neck{display:none}
+.app.chromatic .stage{padding-bottom:7vh}
+.app.chromatic .note-wrap{height:clamp(96px,22vh,200px)}
+.app.chromatic .note{font-size:clamp(88px,20vh,184px)}
+.app.chromatic .bloom{width:240px;height:240px;margin:-120px 0 0 -120px}
+
+/* ---------- sheets, dialogs, toast (as in the other Echo apps) ---------- */
+.sheet-wrap{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;justify-content:flex-end}
+.backdrop{position:absolute;inset:0;background:rgba(0,0,0,.4);animation:fade .2s ease-out}
+.sheet{position:relative;width:100%;max-width:560px;margin:0 auto;max-height:88vh;max-height:88dvh;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  background:var(--sheet-bg);border-radius:18px 18px 0 0;padding:6px 16px calc(14px + env(safe-area-inset-bottom));animation:rise .28s cubic-bezier(.2,.9,.25,1);
+  -webkit-user-select:text;user-select:text}
+.grabber{width:38px;height:5px;border-radius:3px;background:var(--fill-strong);margin:4px auto 10px}
+.sheet-title{margin:4px 8px 2px;text-align:center;font-size:17px;font-weight:700}
+.sheet-sub{margin:2px 8px 4px;text-align:center;font-size:13px;color:var(--text2)}
+.group{margin-top:12px;background:var(--sheet-card);border-radius:14px;overflow:hidden}
+.group-title{margin:18px 16px 6px;font-size:13px;font-weight:600;color:var(--text2)}
+.row{position:relative;width:100%;display:flex;align-items:center;gap:12px;min-height:54px;padding:9px 16px;text-align:left;background:var(--sheet-card)}
+.row+.row::before{content:"";position:absolute;top:0;left:16px;right:0;height:1px;transform:scaleY(.5);transform-origin:top;background:var(--sep)}
+.row:active{background:var(--fill)}
+.row-text{flex:1;min-width:0}
+.row-name{display:block;font-size:16.5px;font-weight:600}
+.row-sub{display:block;font-size:13px;color:var(--text2)}
+.row-notes{font-family:var(--serif);font-size:16px;font-weight:600;letter-spacing:.12em;color:var(--text2);white-space:nowrap}
+.row-notes sup{font-size:.62em;letter-spacing:0}
+.row .check{color:var(--accent);visibility:hidden}
+.row[aria-checked="true"] .check{visibility:visible}
+.row[aria-checked="true"] .row-name{color:var(--accent)}
+.act.cancel{width:100%;min-height:52px;margin-top:12px;border-radius:14px;background:var(--sheet-card);font-weight:650;font-size:17px;color:var(--accent)}
+.act.cancel:active{background:var(--fill)}
+.setting{padding:14px 16px;background:var(--sheet-card)}
+.setting+.setting{border-top:.5px solid var(--sep)}
+.setting-head{display:flex;align-items:center;gap:10px}
+.setting-name{flex:1;font-size:16px;font-weight:600}
+.setting-note{margin:6px 0 0;font-size:13px;color:var(--text2)}
+.stepper{display:flex;align-items:center;gap:4px}
+.stepper button{width:40px;height:36px;border-radius:10px;background:var(--fill);display:grid;place-items:center}
+.stepper button:active{background:var(--fill-strong)}
+.stepper .val{min-width:74px;text-align:center;font-family:var(--round);font-size:17px;font-weight:650;font-variant-numeric:tabular-nums}
+.seg{display:grid;grid-auto-columns:1fr;grid-auto-flow:column;gap:2px;margin-top:10px;padding:2px;border-radius:11px;background:var(--fill)}
+.seg button{height:36px;border-radius:9px;font-weight:650;font-size:15px}
+.seg button[aria-checked="true"]{background:var(--seg-on);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.14),0 0 0 .5px rgba(0,0,0,.04)}
+.seg .serif{font-family:var(--serif);font-size:16px}
+.help{margin-top:6px;background:var(--sheet-card);border-radius:14px;padding:4px 16px 14px;font-size:15px;line-height:1.45}
+.help h4{margin:14px 0 4px;font-size:15px;font-weight:700}
+.help p{margin:0;color:var(--text2)}
+.help p+p{margin-top:6px}
+.help b{color:var(--text);font-weight:650}
+.help-status{display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--fill);font-size:14px;font-weight:600}
+.help-status[data-state="ready"]{color:var(--good)}
+.help-status[data-state="ready"] .dot{background:var(--good)}
+.details{margin:12px 0 0;padding:12px;border-radius:12px;background:var(--sheet-card);font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text2)}
+.toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 10px);z-index:80;width:max-content;max-width:calc(100% - 32px);padding:11px 16px;border-radius:14px;
+  background:var(--toast-bg);color:var(--toast-fg);font-size:15px;font-weight:600;text-align:center;box-shadow:0 10px 26px rgba(0,0,0,.22);
+  transform:translate(-50%,-180%);opacity:0;transition:transform .3s cubic-bezier(.2,.9,.25,1),opacity .3s;pointer-events:none}
+.toast.show{transform:translate(-50%,0);opacity:1}
+.old{max-width:520px;margin:40px auto;padding:18px 20px;border-radius:16px;background:var(--panel);font-size:15px;line-height:1.45}
+.old b{display:block;margin-bottom:4px}
+
+/* ---------- small, short and sideways screens ---------- */
+@media (max-height:700px){
+  .top{height:48px}
+  .bar .tuning-btn,.bar .auto{height:48px}
+  .meter{margin-top:8px}
+  .say{margin-top:8px}
+}
+@media (orientation:landscape) and (max-height:540px){
+  .app{max-width:980px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-rows:auto auto 1fr;column-gap:28px}
+  .top{grid-column:1 / -1}
+  .bar{grid-column:1;grid-row:2}
+  .stage{grid-column:1;grid-row:3;min-height:0}
+  .neck{grid-column:2;grid-row:2 / 4;align-items:center;padding:0}
+  .head{width:min(100%,calc(78vh * 360 / 262))}
+  .note-wrap{height:clamp(56px,20vh,96px)}
+  .note{font-size:clamp(52px,18vh,88px)}
+  .meter{margin-top:6px}
+}
+@media (prefers-reduced-motion: reduce){
+  .bloom.go{animation:none}
+  .sheet,.backdrop,.toast{animation:none;transition:none}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <h1 class="brand">Echo <b>Tune</b></h1>
+    <div class="top-actions">
+      <button class="status" id="statusBtn" type="button" data-state="none" aria-label="Offline status and help"><span class="dot"></span><span id="statusText">Checking…</span></button>
+      <button class="hbtn" id="setBtn" type="button" aria-label="Settings"></button>
+      <button class="hbtn" id="helpBtn" type="button" aria-label="Help"></button>
+    </div>
+  </header>
+
+  <div class="bar">
+    <button class="tuning-btn" id="tuningBtn" type="button" aria-haspopup="dialog">
+      <span class="t-text"><span class="t-name" id="tuningName">Standard</span><span class="t-notes" id="tuningNotes"></span></span>
+    </button>
+    <div class="auto" id="autoWrap">
+      <span id="autoLabel">Auto</span>
+      <button class="switch" id="autoSwitch" type="button" role="switch" aria-checked="true" aria-labelledby="autoLabel"></button>
+    </div>
+  </div>
+
+  <main class="stage" id="stage" data-status="off">
+    <div class="note-wrap">
+      <div class="bloom" id="bloom"></div>
+      <div class="note" id="note" aria-hidden="true"><span id="noteLetter">E</span><span class="n-side"><span class="n-acc" id="noteAcc"></span><span class="n-oct" id="noteOct">2</span></span></div>
+    </div>
+    <div class="readout" aria-hidden="true"><span class="cents" id="cents">0.0</span><span class="cents-unit">cents</span></div>
+    <div class="hz" id="hz" aria-hidden="true"></div>
+    <div class="target num" id="target" aria-hidden="true"></div>
+    <div class="meter" aria-hidden="true"><svg id="meter" viewBox="0 0 340 62"></svg></div>
+    <div class="strobe" aria-hidden="true"><i id="stripes"></i></div>
+    <p class="say" id="say">Play a string</p>
+    <div class="panel" id="panel">
+      <button class="mic-btn" id="micBtn" type="button" aria-describedby="panelText"></button>
+      <h2 id="panelTitle">Start tuning</h2>
+      <p id="panelText">Echo Tune listens through the microphone. Nothing is recorded or sent anywhere.</p>
+      <button class="link" id="panelMore" type="button" hidden>Details</button>
+    </div>
+  </main>
+
+  <section class="neck" aria-label="Strings">
+    <div class="head" id="head"><svg id="headSvg" viewBox="0 0 360 262" aria-hidden="true"></svg></div>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="vh" id="live" aria-live="polite"></div>
+<div id="layer"></div>
+
+<div class="old" id="old" hidden><b>Echo Tune didn’t start.</b><span id="oldText">It needs iOS 15 or later, or a recent Chrome, Edge or Safari.</span></div>
+<script>
+  // A safety net: if the app's main code hasn't started after 12 seconds, say why instead of showing a dead page.
+  setTimeout(function () {
+    if (window.__echoTuneStarted) return;
+    if (location.protocol === 'file:') document.getElementById('oldText').textContent = 'Open it from its web address (your GitHub Pages link). It can’t run from a file in a folder.';
+    document.getElementById('old').hidden = false;
+  }, 12000);
+</script>
+
+<script type="module">
+/* =====================================================================
+   ECHO TUNE
+   A guitar tuner: it hears the string you play and shows how far it
+   is from the right note, in cents (hundredths of a semitone).
+
+   How it fits together:
+   1. The microphone's sound comes in through mic-worklet.js, about
+      20 ms at a time, with the iPhone's voice processing switched off
+      (no echo cancelling, noise suppression or automatic volume, which
+      would colour the sound).
+   2. pitch.js measures the pitch (PitchDetector) and decides which
+      string it is and whether it's in tune (Tuner).
+   3. This file draws it: the note, the cents, the needle, the strobe
+      band, and the headstock with its six pegs.
+   ===================================================================== */
+import { PitchDetector, Tuner, TUNINGS, midiToFreq } from './pitch.js';
+
+window.__echoTuneStarted = true;   // tells the safety net above that the app loaded
+
+/* ---------- 1. Settings ---------- */
+const VERSION = '1.0';
+const A4_MIN = 415, A4_MAX = 466;       // the reference pitch range offered in Settings
+const TOLERANCES = [1, 2, 3, 5];        // "in tune within ± … cents"
+const SPAN = 50;                        // the meter shows ±50 cents
+const CURVE = 0.55;                     // the meter is stretched near the centre: ±1 cent is easy to see
+const STROBE_SPEED = 14;                // strobe band: pixels per second for each cent off
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+
+/* ---------- 2. What the app knows right now ---------- */
+const tuner = new Tuner();
+const S = {
+  phase: 'off',      // off | starting | running | paused | error
+  ctx: null, stream: null, source: null, node: null, sink: null, det: null,
+  lastData: 0,       // when the microphone last sent sound
+  watch: 0,          // timer that checks the microphone keeps sending
+  resumeOnShow: false,
+  error: null,       // { kind, detail }
+  lastCheer: 0,
+  allTunedSaid: false,
+};
+
+/* ---------- 3. Small helpers ---------- */
+const $ = (id) => document.getElementById(id);
+const el = {
+  app: $('app'), statusBtn: $('statusBtn'), statusText: $('statusText'), setBtn: $('setBtn'), helpBtn: $('helpBtn'),
+  tuningBtn: $('tuningBtn'), tuningName: $('tuningName'), tuningNotes: $('tuningNotes'), autoSwitch: $('autoSwitch'),
+  stage: $('stage'), bloom: $('bloom'), noteLetter: $('noteLetter'), noteAcc: $('noteAcc'), noteOct: $('noteOct'),
+  cents: $('cents'), hz: $('hz'), target: $('target'), meter: $('meter'), stripes: $('stripes'), say: $('say'),
+  panel: $('panel'), micBtn: $('micBtn'), panelTitle: $('panelTitle'), panelText: $('panelText'), panelMore: $('panelMore'),
+  head: $('head'), headSvg: $('headSvg'), toast: $('toast'), live: $('live'), layer: $('layer'),
+};
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const NS = 'http://www.w3.org/2000/svg';
+
+// Builds an element: h('button', { class: 'x', onclick: fn }, 'Label')
+function h(tag, props, ...kids) {
+  const node = document.createElement(tag);
+  if (props) for (const [key, val] of Object.entries(props)) {
+    if (val == null || val === false) continue;
+    if (key === 'class') node.className = val;
+    else if (key === 'text') node.textContent = val;
+    else if (key.startsWith('on') && typeof val === 'function') node.addEventListener(key.slice(2), val);
+    else if (val === true) node.setAttribute(key, '');
+    else node.setAttribute(key, val);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) node.append(kid);
+  return node;
+}
+function svg(tag, attrs, parent) {
+  const node = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+  if (parent) parent.append(node);
+  return node;
+}
+
+// Line icons on a 24 × 24 grid. A plain string is an outline; { fill: true } is a solid shape.
+const ICONS = {
+  mic: 'M12 3.5a3 3 0 0 0-3 3v5.5a3 3 0 0 0 6 0V6.5a3 3 0 0 0-3-3zM5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5M8.5 20.5h7',
+  settings: 'M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9M15 5.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM9 14.5a2 2 0 1 1 0 4 2 2 0 0 1 0-4z',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.6 9.4a2.5 2.5 0 1 1 3.4 2.35c-.6.25-1 .85-1 1.5v.55M12 17h.01',
+  chevron: 'M7 10l5 5 5-5',
+  check: 'M5.5 12.5l4.2 4.2L18.5 8',
+  minus: 'M6 12h12',
+  plus: 'M12 6v12M6 12h12',
+  copy: 'M9 9h10v11H9zM5 15V4h10',
+  restart: 'M4 12a8 8 0 1 0 2.35-5.65M4 4.5V9h4.5',
+};
+function icon(name, size = 20, stroke = 2, cls = '') {
+  const def = typeof ICONS[name] === 'string' ? { d: ICONS[name] } : ICONS[name];
+  const s = document.createElementNS(NS, 'svg');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', size); s.setAttribute('height', size);
+  s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', ('ico ' + cls).trim());
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', def.d);
+  if (def.fill) p.setAttribute('fill', 'currentColor');
+  else {
+    p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor'); p.setAttribute('stroke-width', stroke);
+    p.setAttribute('stroke-linecap', 'round'); p.setAttribute('stroke-linejoin', 'round');
+  }
+  s.append(p);
+  return s;
+}
+
+function loadPref(key, fallback) { try { const v = localStorage.getItem('echo-tune.' + key); return v == null ? fallback : v; } catch (e) { return fallback; } }
+function savePref(key, val) { try { localStorage.setItem('echo-tune.' + key, String(val)); } catch (e) { /* private mode: not remembered */ } }
+
+let toastTimer = 0;
+function toast(msg, ms = 2600) {
+  el.toast.textContent = msg;
+  el.toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.remove('show'), ms);
+}
+function say(msg) { el.live.textContent = ''; setTimeout(() => { el.live.textContent = msg; }, 30); }   // for VoiceOver
+
+// A light tap you can feel when a string locks in tune (iPhone with iOS 18 or later; elsewhere nothing happens).
+function haptic() {
+  try {
+    const label = document.createElement('label');
+    label.setAttribute('aria-hidden', 'true');
+    label.style.display = 'none';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('switch', '');
+    label.append(input);
+    document.head.append(label);
+    label.click();
+    label.remove();
+  } catch (e) { /* no haptics here */ }
+}
+
+/* ---------- 4. Notes and strings, in words ---------- */
+// "Eb" in a tuning is shown as E with a small ♭.
+function noteHTML(n) { return n.accidental ? [n.letter, h('sup', { text: n.accidental })] : [n.letter]; }
+const noteText = (n) => n.letter + n.accidental;
+// "the A string", "the low E string", "the middle D string" …
+function stringName(idx) {
+  const strings = tuner.tuning.strings, me = strings[idx], name = noteText(me);
+  const same = strings.map((s, i) => ({ s, i })).filter((x) => noteText(x.s) === name);
+  if (same.length === 1) return `the ${name} string`;
+  const pos = same.findIndex((x) => x.i === idx);
+  return `the ${pos === 0 ? 'low' : pos === same.length - 1 ? 'high' : 'middle'} ${name} string`;
+}
+// +3.2, −0.4, and plain 0.0 (never "−0.0")
+function fmtCents(c) { const r = Math.round(c * 10) / 10; return (r < 0 ? '−' : r > 0 ? '+' : '') + Math.abs(r).toFixed(1); }
+const fmtHz = (f) => `${f.toFixed(2)} Hz`;
+
+/* ---------- 5. The meter: a scale from −50 to +50 cents, stretched near the centre ---------- */
+const M = { cx: 170, half: 148, base: 34 };
+const meterPos = (c) => Math.sign(c) * Math.pow(Math.min(1, Math.abs(c) / SPAN), CURVE);   // −1 … 1
+let zoneRect, needleG;
+function buildMeter() {
+  const s = el.meter;
+  zoneRect = svg('rect', { class: 'zone', y: 15, height: 26, rx: 7 }, s);
+  const majors = [0, 5, 10, 20, 50], minors = [1, 2, 3, 4, 15, 30, 40];
+  for (const v of [...majors, ...minors]) {
+    for (const sign of v === 0 ? [1] : [-1, 1]) {
+      const x = M.cx + meterPos(sign * v) * M.half;
+      const major = majors.includes(v);
+      svg('line', { class: 'tick' + (major ? ' major' : ''), x1: x, x2: x, y1: M.base - (major ? 14 : 7), y2: M.base }, s);
+      if (major) svg('text', { class: 'tlabel', x, y: M.base + 16 }, s).textContent = String(v);
+    }
+  }
+  svg('text', { class: 'side', x: 7, y: M.base + 1 }, s).textContent = '♭';
+  svg('text', { class: 'side', x: 333, y: M.base + 1 }, s).textContent = '♯';
+  needleG = svg('g', { class: 'needle', transform: `translate(${M.cx} 0)` }, s);
+  svg('line', { x1: 0, x2: 0, y1: 9, y2: M.base + 5 }, needleG);
+  svg('circle', { cx: 0, cy: 7, r: 5 }, needleG);
+  paintZone();
+}
+function paintZone() {
+  const w = meterPos(tuner.tolerance) * M.half;
+  zoneRect.setAttribute('x', (M.cx - w - 3).toFixed(2));
+  zoneRect.setAttribute('width', (2 * w + 6).toFixed(2));
+}
+
+/* ---------- 6. The headstock: six pegs, three on each side, strings running to the nut ---------- */
+// Positions on a 360 × 262 drawing. String 0 is the 6th (thickest) string, string 5 the 1st.
+// As on a real 3 + 3 headstock: low E at the bottom left, then A and D above it; G, B and high E on the right.
+const POSTS = [[134, 192], [134, 128], [134, 64], [226, 64], [226, 128], [226, 192]];
+const PEG_X = { left: 46, right: 314 };
+const NUT_Y = 250;
+const pegs = [];
+const strings = [];
+function buildHead() {
+  const s = el.headSvg;
+  // the gear housings and shafts reaching out to the pegs
+  POSTS.forEach(([x, y], i) => {
+    const left = i < 3;
+    const px = left ? PEG_X.left : PEG_X.right;
+    const edge = left ? x - 30 : x + 30;
+    svg('line', { class: 'hs-shaft', x1: px, y1: y, x2: edge, y2: y }, s);
+    svg('rect', { class: 'hs-gear', x: left ? edge - 26 : edge, y: y - 10, width: 26, height: 20, rx: 4 }, s);
+  });
+  svg('path', { class: 'hs-body', d: 'M148 262 C142 204 114 128 108 60 C106 37 117 21 141 17 Q180 7 219 17 C243 21 254 37 252 60 C246 128 218 204 212 262 Z' }, s);
+  POSTS.forEach(([x, y], i) => {
+    const nx = 156 + i * 9.6;
+    strings.push(svg('line', { class: 'hs-string', x1: x, y1: y, x2: nx, y2: 262 }, s));
+  });
+  POSTS.forEach(([x, y]) => svg('circle', { class: 'hs-post', cx: x, cy: y, r: 7 }, s));
+  svg('rect', { class: 'hs-nut', x: 148, y: NUT_Y, width: 64, height: 8, rx: 2 }, s);
+  // the pegs: real buttons laid over the drawing
+  POSTS.forEach(([, y], i) => {
+    const x = i < 3 ? PEG_X.left : PEG_X.right;
+    const b = h('button', { class: 'peg', type: 'button', style: `--x:${(x / 360) * 100};--y:${(y / 262) * 100}`, onclick: () => tapPeg(i) });
+    b.append(h('span', { class: 'peg-label' }), h('span', { class: 'tick-badge', 'aria-hidden': 'true' }, icon('check', 13, 3)));
+    el.head.append(b);
+    pegs.push(b);
+  });
+}
+function paintPegs() {
+  const st = tuner.state;
+  const active = tuner.mode === 'manual' ? tuner.locked : (st.status !== 'idle' && st.stringIdx >= 0 ? st.stringIdx : -1);
+  const targets = tuner.targets();
+  tuner.tuning.strings.forEach((n, i) => {
+    const b = pegs[i];
+    const key = `${noteText(n)}|${i === active}|${tuner.mode === 'manual' && tuner.locked === i}|${tuner.tuned[i]}`;
+    if (b.dataset.key === key) return;
+    b.dataset.key = key;
+    b.firstChild.replaceChildren(...noteHTML(n));
+    b.classList.toggle('on', i === active);
+    b.classList.toggle('locked', tuner.mode === 'manual' && tuner.locked === i);
+    b.classList.toggle('tuned', tuner.tuned[i]);
+    b.setAttribute('aria-pressed', String(tuner.mode === 'manual' && tuner.locked === i));
+    const name = stringName(i);
+    b.setAttribute('aria-label', `${name[4].toUpperCase()}${name.slice(5)}, ${n.letter}${n.accidental}${n.octave}, ${targets[i].toFixed(2)} hertz${tuner.tuned[i] ? ', in tune' : ''}`);
+    strings[i].classList.toggle('on', i === active);
+  });
+}
+
+/* ---------- 7. The bar: tuning, Auto ---------- */
+function paintBar() {
+  const chroma = tuner.mode === 'chromatic';
+  el.app.classList.toggle('chromatic', chroma);
+  el.tuningName.textContent = chroma ? 'Chromatic' : tuner.tuning.name;
+  el.tuningNotes.replaceChildren(...(chroma ? ['Any note'] : tuner.tuning.strings.flatMap((n, i) => [i ? ' ' : '', ...noteHTML(n)])));
+  if (!el.tuningBtn.querySelector('.ico')) el.tuningBtn.append(icon('chevron', 18, 2.4));
+  el.autoSwitch.setAttribute('aria-checked', String(tuner.mode === 'auto'));
+  paintPegs();
+}
+
+function setMode(mode, locked = -1) {
+  tuner.setMode(mode, locked);
+  syncDetector();
+  if (mode !== 'manual') savePref('chromatic', mode === 'chromatic' ? 1 : 0);
+  paintBar();
+  paintStage(true);
+}
+function tapPeg(i) {
+  if (tuner.mode === 'manual' && tuner.locked === i) setMode('auto');
+  else setMode('manual', i);
+}
+function toggleAuto() {
+  if (tuner.mode === 'auto') {
+    const st = tuner.state;
+    setMode('manual', st.stringIdx >= 0 ? st.stringIdx : 0);   // stay on the string you were tuning
+    toast('Tap a peg to choose the string');
+  } else setMode('auto');
+}
+// The detector is told which string to prefer and which strings to watch for a fresh pluck.
+function syncDetector() {
+  if (!S.det) return;
+  const hint = tuner.hint();
+  S.det.setHint(hint.freq, hint.strict);
+  S.det.setWatch(tuner.watch());
+}
+
+/* ---------- 8. The stage: note, cents, Hz, what to do ---------- */
+// What the screen should show, from the tuner's latest state.
+function view() {
+  if (S.phase !== 'running') return { status: S.phase === 'starting' ? 'off' : S.phase, live: false, needle: false };
+  const st = tuner.state;
+  if (!st.note || st.status === 'idle') return { status: 'listening', live: false, needle: false };
+  // Green only once the pitch has stayed inside the zone for a tenth of a second, so a fresh pluck
+  // sliding through it on its way down doesn't flash "In tune".
+  const within = Math.abs(st.cents) <= tuner.tolerance && (st.inTuneFor >= 0.1 || st.status === 'in-tune');
+  const status = st.status === 'fading' ? 'fading' : within ? 'in-tune' : st.cents < 0 ? 'flat' : 'sharp';
+  return { status, live: status !== 'fading', needle: true, cents: st.cents, st };
+}
+
+let shown = {};   // what is on screen now, so only changes are drawn
+function paintStage(force) {
+  const v = view();
+  if (force) shown = {};
+  if (shown.status !== v.status) { el.stage.dataset.status = v.status; shown.status = v.status; }
+  // the note
+  let note = null;
+  if (v.st) note = v.st.note;
+  else if (tuner.mode === 'manual') note = tuner.tuning.strings[tuner.locked];
+  else if (shown.lastNote && v.status === 'listening') note = shown.lastNote;
+  const noteKey = note ? `${note.letter}|${note.accidental}|${note.octave}` : '-';
+  if (shown.noteKey !== noteKey) {
+    shown.noteKey = noteKey;
+    el.noteLetter.textContent = note ? note.letter : '–';
+    el.noteAcc.textContent = note ? note.accidental : '';
+    el.noteOct.textContent = note ? String(note.octave) : '';
+  }
+  if (v.st) shown.lastNote = v.st.note;
+  // cents and Hz
+  const cents = v.needle ? fmtCents(v.cents) : '0.0';
+  if (shown.cents !== cents) { el.cents.textContent = cents; shown.cents = cents; }
+  const hz = v.st ? fmtHz(v.st.freq) : '';
+  if (shown.hz !== hz) { el.hz.textContent = hz; shown.hz = hz; }
+  const a4 = tuner.a4 !== 440 ? ` (A4 = ${tuner.a4})` : '';
+  const target = v.st ? `in tune at ${v.st.target.toFixed(2)} Hz${a4}` : a4 ? `A4 = ${tuner.a4} Hz` : '';
+  if (shown.target !== target) { el.target.textContent = target; shown.target = target; }
+  // what to do
+  let text = '';
+  if (v.status === 'listening') {
+    text = tuner.mode === 'chromatic' ? 'Play a note' : tuner.mode === 'manual' ? `Play ${stringName(tuner.locked)}` : 'Play a string';
+  } else if (v.status === 'fading') text = shown.text || '';
+  else if (v.status === 'in-tune') text = 'In tune';
+  else if (v.status === 'flat' || v.status === 'sharp') {
+    const dir = v.status === 'flat' ? 'Tune up' : 'Tune down';
+    text = Math.abs(v.cents) <= Math.max(6, tuner.tolerance * 3) ? `${dir} a little` : dir;
+  }
+  if (shown.text !== text) { el.say.textContent = text; shown.text = text; }
+  paintPegs();
+}
+
+/* ---------- 9. Animation: the needle glides, the strobe band drifts ---------- */
+let raf = 0, lastFrame = 0, needle = 0, stripe = 0, lastText = 0;
+function kick() { if (!raf) raf = requestAnimationFrame(frame); }
+function frame(now) {
+  raf = 0;
+  const dt = lastFrame ? Math.min(0.1, (now - lastFrame) / 1000) : 1 / 60;
+  lastFrame = now;
+  const v = view();
+  // The needle: glides to its place (about 70 ms), pinned at the end when more than 50 cents off.
+  const target = v.needle ? meterPos(v.cents) : 0;
+  needle += (target - needle) * (1 - Math.exp(-dt / 0.07));
+  needleG.setAttribute('transform', `translate(${(M.cx + needle * M.half).toFixed(2)} 0)`);
+  // The strobe band: drifts left when flat, right when sharp, faster the further off; still when spot on.
+  if (!REDUCED.matches && v.live) {
+    stripe = (stripe + clamp(v.cents, -20, 20) * STROBE_SPEED * dt) % 16;
+    el.stripes.style.transform = `translateX(${stripe.toFixed(2)}px)`;
+  }
+  // Words and numbers change at most about ten times a second, so they stay readable.
+  if (now - lastText > 90) { lastText = now; paintStage(); }
+  if (S.phase === 'running' || Math.abs(target - needle) > 0.0005) kick();
+  else lastFrame = 0;
+}
+
+/* ---------- 10. Listening ---------- */
+class StartError extends Error { constructor(kind) { super(kind); this.kind = kind; } }
+
+async function start() {
+  if (S.phase === 'starting' || S.phase === 'running') return;
+  setPhase('starting');
+  try {
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new StartError('insecure');
+    // The iPhone's voice processing (echo cancelling, noise suppression, automatic volume) is switched off:
+    // it is made for calls and would colour a guitar's sound.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: { ideal: 1 } },
+    });
+    S.stream = stream;
+    const track = stream.getAudioTracks()[0];
+    if (!track) throw new StartError('nomic');
+    track.addEventListener('ended', () => { if (S.phase === 'running') fail(new StartError('ended')); });
+    // The sound engine runs at the microphone's own sample rate, so no conversion can shift the pitch.
+    let rate = 0;
+    try { rate = (track.getSettings && track.getSettings().sampleRate) || 0; } catch (e) { rate = 0; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    let ctx;
+    try { ctx = new AC(rate ? { sampleRate: rate, latencyHint: 'interactive' } : { latencyHint: 'interactive' }); }
+    catch (e) { ctx = new AC(); }
+    S.ctx = ctx;
+    ctx.addEventListener('statechange', onEngineState);
+    if (ctx.state !== 'running') await ctx.resume().catch(() => {});
+    const source = ctx.createMediaStreamSource(stream);
+    const det = new PitchDetector(ctx.sampleRate);
+    // A silent output keeps the engine running (Safari only runs parts that lead to the speaker).
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    sink.connect(ctx.destination);
+    let node;
+    if (ctx.audioWorklet && typeof AudioWorkletNode === 'function') {
+      await ctx.audioWorklet.addModule('mic-worklet.js');
+      node = new AudioWorkletNode(ctx, 'echo-tune-mic', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], processorOptions: { block: det.hop } });
+      node.port.onmessage = (e) => onSound(e.data);
+    } else {
+      // Older browsers: the previous way of reading the microphone.
+      node = ctx.createScriptProcessor(1024, 1, 1);
+      node.onaudioprocess = (e) => onSound(new Float32Array(e.inputBuffer.getChannelData(0)));
+    }
+    source.connect(node);
+    node.connect(sink);
+    Object.assign(S, { source, node, sink, det, lastData: performance.now() });
+    tuner.clear();
+    syncDetector();
+    setPhase('running');
+    keepAwake(true);
+    clearInterval(S.watch);
+    S.watch = setInterval(checkSound, 1000);
+  } catch (err) {
+    fail(err);
+  }
+}
+
+// Every block of microphone sound: measure, decide, and remember what to draw.
+function onSound(block) {
+  if (S.phase !== 'running' || !S.det) return;
+  S.lastData = performance.now();
+  for (const reading of S.det.push(block)) {
+    const before = tuner.state.status;
+    const st = tuner.update(reading);
+    syncDetector();
+    if (st.status === 'in-tune' && before !== 'in-tune') cheer(st);
+  }
+  kick();
+}
+
+// The moment a string locks in tune: a soft green glow, a tick on its peg, a tap you can feel.
+function cheer(st) {
+  const now = performance.now();
+  if (now - S.lastCheer < 1200) return;
+  S.lastCheer = now;
+  el.bloom.classList.remove('go');
+  void el.bloom.offsetWidth;            // restart the animation
+  el.bloom.classList.add('go');
+  haptic();
+  const what = tuner.mode === 'chromatic' ? `${st.note.letter}${st.note.accidental}` : stringName(st.stringIdx).replace(/^the /, '');
+  say(`${what[0].toUpperCase()}${what.slice(1)} in tune`);
+  if (tuner.mode !== 'chromatic' && tuner.tuned.every(Boolean) && !S.allTunedSaid) {
+    S.allTunedSaid = true;
+    setTimeout(() => toast('All six strings are in tune'), 500);
+  }
+  paintPegs();
+}
+
+function stop() {
+  clearInterval(S.watch);
+  try {
+    if (S.node) { if (S.node.port) S.node.port.onmessage = null; else S.node.onaudioprocess = null; S.node.disconnect(); }
+    if (S.source) S.source.disconnect();
+  } catch (e) { /* already disconnected */ }
+  if (S.stream) S.stream.getTracks().forEach((t) => t.stop());   // switches the microphone (and its orange dot) off
+  if (S.ctx) { S.ctx.removeEventListener('statechange', onEngineState); S.ctx.close().catch(() => {}); }
+  Object.assign(S, { ctx: null, stream: null, source: null, node: null, sink: null, det: null });
+  keepAwake(false);
+}
+
+// The iPhone pauses the sound engine for a call, Siri or an alarm. Offer to carry on.
+function onEngineState() {
+  if (!S.ctx || S.phase !== 'running') return;
+  if (S.ctx.state === 'suspended' || S.ctx.state === 'interrupted') setPhase('paused');
+}
+function checkSound() {
+  if (S.phase !== 'running') return;
+  if (S.ctx && S.ctx.state !== 'running') { setPhase('paused'); return; }
+  if (performance.now() - S.lastData > 2500) fail(new StartError('silent'));
+}
+async function resume() {
+  if (!S.ctx) return start();
+  try { await S.ctx.resume(); } catch (e) { /* handled below */ }
+  if (S.ctx.state === 'running') { S.lastData = performance.now(); setPhase('running'); }
+  else { stop(); start(); }
+}
+
+function fail(err) {
+  stop();
+  const name = err && err.name;
+  let kind = err instanceof StartError ? err.kind : 'failed';
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') kind = 'blocked';
+  else if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'NotReadableError' || name === 'AbortError') kind = 'nomic';
+  S.error = { kind, detail: `${name || 'Error'}: ${(err && err.message) || err}` };
+  if (kind !== 'failed') console.warn(err); else console.error(err);
+  setPhase('error');
+}
+
+// Off, starting, running, paused, error: what the panel over the stage says.
+function setPhase(phase) {
+  S.phase = phase;
+  const P = {
+    off: ['Start tuning', 'Echo Tune listens through the microphone. Nothing is recorded or sent anywhere.'],
+    starting: ['Starting…', IOS ? 'If the iPhone asks to use the microphone, tap Allow.' : 'If the browser asks to use the microphone, allow it.'],
+    paused: ['Paused', 'The iPhone paused the sound for something else, like a call. Tap to carry on tuning.'],
+  };
+  const E = {
+    blocked: ['The microphone is blocked', IOS
+      ? 'Echo Tune needs it to hear your guitar. Close Echo Tune completely (swipe it away), open it again and choose Allow. If it doesn’t ask, open Settings › Apps › Safari › Microphone (on iOS 17: Settings › Safari › Microphone) and choose Ask.'
+      : 'Allow the microphone for this page (look for the microphone in the address bar), then tap the button.'],
+    nomic: ['The microphone is busy', 'Another app may be using it, like a call or a recording. Finish that, then tap the button to try again.'],
+    insecure: ['Open Echo Tune from its web address', 'The microphone only works on a secure (https) page, like your GitHub Pages link.'],
+    silent: ['No sound is coming in', 'Tap the button to restart listening. If it happens again, close Echo Tune completely (swipe it away) and open it again.'],
+    ended: ['The microphone stopped', 'Another app may have taken it. Tap the button to listen again.'],
+    failed: ['Listening didn’t start', 'Tap the button to try again. Details shows what went wrong.'],
+  };
+  const [title, text] = phase === 'error' ? E[S.error.kind] || E.failed : P[phase] || ['', ''];
+  el.panel.hidden = phase === 'running';
+  el.panelTitle.textContent = title;
+  el.panelText.textContent = text;
+  el.panelMore.hidden = !(phase === 'error' && S.error.kind === 'failed');
+  el.micBtn.classList.toggle('busy', phase === 'starting');
+  el.micBtn.disabled = phase === 'starting';
+  el.micBtn.replaceChildren(icon(phase === 'error' || phase === 'paused' ? 'restart' : 'mic', 40, 1.8));
+  el.micBtn.setAttribute('aria-label', phase === 'paused' ? 'Carry on tuning' : phase === 'error' ? 'Try again' : 'Start tuning');
+  paintStage(true);
+  kick();
+}
+
+// Keeps the screen on while tuning (the iPhone would dim it and stop the app).
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) { const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch (e) { wakeLock = null; }
+}
+// Leaving the app switches the microphone off; coming back switches it on again.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    if (S.phase === 'running' || S.phase === 'paused') { S.resumeOnShow = true; stop(); setPhase('off'); }
+  } else if (S.resumeOnShow) {
+    S.resumeOnShow = false;
+    start();
+  }
+});
+
+/* ---------- 11. Sheets: tunings, settings, help ---------- */
+let sheetOpen = false, sheetReturn = null;
+function openSheet({ title, sub, body }) {
+  closeSheet();
+  sheetReturn = document.activeElement;
+  const sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: '-1' },
+    h('div', { class: 'grabber' }), h('div', { class: 'sheet-title', text: title }), sub ? h('div', { class: 'sheet-sub', text: sub }) : null, body,
+    h('button', { class: 'act cancel', type: 'button', text: 'Done', onclick: closeSheet }));
+  el.layer.replaceChildren(h('div', { class: 'sheet-wrap' }, h('div', { class: 'backdrop', onclick: closeSheet }), sheet));
+  sheetOpen = true;
+  sheet.focus({ preventScroll: true });
+  return sheet;
+}
+function closeSheet() {
+  if (!sheetOpen) return;
+  sheetOpen = false;
+  el.layer.replaceChildren();
+  if (sheetReturn && sheetReturn.focus) sheetReturn.focus({ preventScroll: true });
+  sheetReturn = null;
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheetOpen) closeSheet(); });
+
+function openTunings() {
+  const row = (name, notes, checked, onpick) => h('button', { class: 'row', type: 'button', role: 'menuitemradio', 'aria-checked': String(checked), onclick: () => { onpick(); closeSheet(); } },
+    h('span', { class: 'row-text' }, h('span', { class: 'row-name', text: name })), notes, icon('check', 22, 2.4, 'check'));
+  const chroma = tuner.mode === 'chromatic';
+  openSheet({
+    title: 'Tuning',
+    body: h('div', null,
+      h('div', { class: 'group' }, row('Chromatic', h('span', { class: 'row-sub', text: 'Any note' }), chroma, () => setMode('chromatic'))),
+      h('div', { class: 'group-title', text: 'Guitar, 6 strings' }),
+      h('div', { class: 'group' }, TUNINGS.map((t) => row(t.name,
+        h('span', { class: 'row-notes' }, t.strings.flatMap((n, i) => [i ? ' ' : '', ...noteHTML(n)])),
+        !chroma && t.id === tuner.tuning.id,
+        () => { tuner.setTuning(t); savePref('tuning', t.id); S.allTunedSaid = false; setMode(tuner.mode === 'chromatic' ? 'auto' : tuner.mode === 'manual' ? 'manual' : 'auto', tuner.locked); })))),
+  });
+}
+
+function openSettings() {
+  const a4Val = h('span', { class: 'val' });
+  const resetA4 = h('button', { class: 'link', type: 'button', text: 'Use 440', style: 'height:30px;padding:0;color:var(--accent);font-weight:600' });
+  const setA4 = (hz) => {
+    hz = clamp(Math.round(hz), A4_MIN, A4_MAX);
+    if (hz !== tuner.a4) { tuner.setA4(hz); savePref('a4', hz); S.allTunedSaid = false; syncDetector(); paintBar(); paintStage(true); }
+    a4Val.textContent = `${hz} Hz`;
+    resetA4.hidden = hz === 440;
+  };
+  const seg = (options, current, onpick) => {
+    const wrap = h('div', { class: 'seg', role: 'radiogroup' });
+    const paint = (val) => wrap.querySelectorAll('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === String(val))));
+    options.forEach(([val, label, cls]) => wrap.append(h('button', { type: 'button', role: 'radio', class: cls || null, 'data-v': String(val), text: label, onclick: () => { onpick(val); paint(val); } })));
+    paint(current);
+    return wrap;
+  };
+  const minus = h('button', { type: 'button', 'aria-label': 'Lower' }, icon('minus', 18, 2.2));
+  const plus = h('button', { type: 'button', 'aria-label': 'Higher' }, icon('plus', 18, 2.2));
+  repeatButton(minus, () => setA4(tuner.a4 - 1));
+  repeatButton(plus, () => setA4(tuner.a4 + 1));
+  resetA4.addEventListener('click', () => setA4(440));
+  setA4(tuner.a4);
+  openSheet({
+    title: 'Settings',
+    body: h('div', { class: 'group' },
+      h('div', { class: 'setting' },
+        h('div', { class: 'setting-head' }, h('span', { class: 'setting-name', text: 'Reference pitch, A4' }), h('div', { class: 'stepper' }, minus, a4Val, plus)),
+        h('p', { class: 'setting-note' }, 'Almost all music uses 440 Hz. Change it only to match a piano or a recording tuned differently. ', resetA4)),
+      h('div', { class: 'setting' },
+        h('div', { class: 'setting-head' }, h('span', { class: 'setting-name', text: 'Counts as in tune within' })),
+        seg(TOLERANCES.map((t) => [t, `±${t} ¢`]), tuner.tolerance, (t) => { tuner.tolerance = t; savePref('tolerance', t); paintZone(); paintStage(true); }),
+        h('p', { class: 'setting-note', text: '±2 cents is finer than most ears can hear. ±1 is for the patient.' })),
+      h('div', { class: 'setting' },
+        h('div', { class: 'setting-head' }, h('span', { class: 'setting-name', text: 'Note names in Chromatic' })),
+        seg([[0, 'C♯  D♯  F♯', 'serif'], [1, 'D♭  E♭  G♭', 'serif']], tuner.flats ? 1 : 0, (v) => { tuner.flats = v === 1; savePref('flats', v); tuner.chromaMidi = null; paintStage(true); }))),
+  });
+}
+
+// A button that repeats while you hold it (for − and +).
+function repeatButton(btn, fn) {
+  let timer = 0, every = 0;
+  const stopIt = () => { clearTimeout(timer); clearInterval(every); timer = every = 0; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    fn();
+    timer = setTimeout(() => { every = setInterval(fn, 110); }, 450);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => btn.addEventListener(ev, stopIt));
+  btn.addEventListener('click', (e) => { if (e.detail === 0) fn(); });   // Enter or Space on a keyboard
+}
+
+function openHelp() {
+  const statusText = {
+    ready: 'Echo Tune is saved on this device and works with no internet.',
+    saving: 'Keep it open for a moment while online so it can save itself.',
+    none: 'This browser can’t save Echo Tune for offline use.',
+  }[offlineState];
+  const p = (html) => { const n = h('p'); n.innerHTML = html; return n; };
+  const rate = S.ctx ? `${S.ctx.sampleRate} Hz` : 'not listening';
+  openSheet({
+    title: 'How Echo Tune works',
+    body: h('div', { class: 'help' },
+      h('h4', { text: 'Tune a string' }),
+      p('Play one string and let it ring. The needle shows how far off it is: to the left (♭) the string is <b>flat</b>, so tighten it; to the right (♯) it is <b>sharp</b>, so loosen it. When it turns green it is in tune and its peg gets a tick.'),
+      h('h4', { text: 'The striped band' }),
+      p('It drifts left when you are flat and right when you are sharp. The closer you get, the slower it moves. When it stands still, the string is spot on: that shows differences far smaller than the needle can.'),
+      h('h4', { text: 'Auto, or one string' }),
+      p('With <b>Auto</b> on, Echo Tune works out which string you are playing, even with other strings still ringing. Tap a peg to tune only that string, which helps when a string is far off or when you change tuning. Tap it again, or switch Auto on, to go back.'),
+      h('h4', { text: 'For the most exact result' }),
+      p('Pluck firmly near the middle of the string with your thumb and read the needle after the first half second: a fresh pluck always rings a little sharp. Touch the other strings to stop them ringing. Hold the iPhone 20 to 50 cm away with its bottom edge (the microphone) towards the guitar.'),
+      p('Tune <b>up</b> to the note: if you are sharp, go below the note and come back up. The string then holds its tuning better.'),
+      h('h4', { text: 'Tunings and Chromatic' }),
+      p('Tap the tuning at the top to choose another one. <b>Chromatic</b> shows any note, for other instruments or single frets. <b>Settings</b> changes the reference pitch (A4 = 440 Hz) and how close counts as in tune.'),
+      h('h4', { text: 'Private' }),
+      p('The sound is measured on this iPhone as it arrives and then forgotten. Nothing is recorded or sent anywhere.'),
+      h('div', { class: 'help-status', 'data-state': offlineState }, h('span', { class: 'dot' }), h('span', { text: statusText })),
+      h('h4', { text: 'About' }),
+      p(`Echo Tune ${VERSION}. Pitch measured with the McLeod method, refined over many vibrations in narrow bands around the note. Microphone sample rate: ${rate}.`)),
+  });
+}
+
+function showDetails() {
+  const text = [`Echo Tune ${VERSION}`, `Problem: ${S.error ? S.error.kind : 'none'}`, S.error ? S.error.detail : '', `Browser: ${navigator.userAgent}`].filter(Boolean).join('\n');
+  openSheet({ title: 'Details', body: h('div', null, h('pre', { class: 'details', text }),
+    h('div', { class: 'group' }, h('button', { class: 'row', type: 'button', onclick: () => navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Couldn’t copy')) },
+      icon('copy', 22), h('span', { class: 'row-text' }, h('span', { class: 'row-name', text: 'Copy details' }))))) });
+}
+
+/* ---------- 12. Offline status ---------- */
+let offlineState = 'none';
+const STATUS_LABEL = { ready: 'Offline ready', saving: 'Saving offline…', none: 'Online only' };
+async function refreshOffline() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext || !window.caches) offlineState = 'none';
+  else {
+    try {
+      const need = ['index.html', 'pitch.js', 'mic-worklet.js'];
+      const hits = await Promise.all(need.map((f) => caches.match(new URL(f, location.href).href)));
+      offlineState = hits.every(Boolean) ? 'ready' : 'saving';
+    } catch (e) { offlineState = 'saving'; }
+  }
+  el.statusBtn.dataset.state = offlineState;
+  el.statusText.textContent = STATUS_LABEL[offlineState];
+  el.statusBtn.setAttribute('aria-label', `${STATUS_LABEL[offlineState]}. Tap for help.`);
+}
+
+/* ---------- 13. Starting up ---------- */
+function init() {
+  // Settings remembered from last time
+  const t = TUNINGS.find((x) => x.id === loadPref('tuning', 'standard')) || TUNINGS[0];
+  tuner.setTuning(t);
+  tuner.setA4(clamp(Number(loadPref('a4', 440)) || 440, A4_MIN, A4_MAX));
+  const tol = Number(loadPref('tolerance', 2));
+  tuner.tolerance = TOLERANCES.includes(tol) ? tol : 2;
+  tuner.flats = loadPref('flats', '0') === '1';
+  tuner.setMode(loadPref('chromatic', '0') === '1' ? 'chromatic' : 'auto');
+
+  el.setBtn.append(icon('settings', 20));
+  el.helpBtn.append(icon('help', 20));
+  buildMeter();
+  buildHead();
+  paintBar();
+  setPhase('off');
+
+  el.micBtn.addEventListener('click', () => (S.phase === 'paused' ? resume() : start()));
+  el.panelMore.addEventListener('click', showDetails);
+  el.tuningBtn.addEventListener('click', openTunings);
+  el.autoSwitch.addEventListener('click', toggleAuto);
+  el.setBtn.addEventListener('click', openSettings);
+  el.helpBtn.addEventListener('click', openHelp);
+  el.statusBtn.addEventListener('click', openHelp);
+  REDUCED.addEventListener?.('change', () => { el.stripes.style.transform = ''; });
+
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(refreshOffline).catch(refreshOffline);
+    navigator.serviceWorker.addEventListener('controllerchange', refreshOffline);
+    setTimeout(refreshOffline, 3000);
+  }
+  refreshOffline();
+}
+
+init();
+window.EchoTune = { tuner, S, start, stop, view };   // for testing from the browser's console
+</script>
+</body>
+</html>
